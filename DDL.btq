@@ -1,0 +1,51 @@
+/*****************************************************************************/
+/* Name:    DDL.btq    	                             						*/
+/*                                                                           */
+/* Description: To create epm dates table for the GPI run.             		*/
+/*									     									*/
+/*****************************************************************************/
+/* Date        Who  	   Release                                           */
+/* _________   __________  _______________________________________________   */
+/* 09/14/2016  T89228[OK]  QA:CHG0167530 PROD:CHG0162868 Release 12 Changes  */
+/* 01/15/2017  T89228[RM]  QA:CHG0167530 PROD:CHG0162868 Release 12 Changes  */
+/*****************************************************************************/
+
+.logon td9/t83049,Nov@2016;
+
+.set MAXERROR 1
+.set ERRORLEVEL 3624 SEVERITY 0; /* ignore collect statistics error  */
+.set ERROROUT STDOUT
+
+SET QUERY_BAND='UTILITYNAME=BTEQ;OSUSER=__LOGNAME__;PROJECT=EPM;PROCESS/REPORT=DDL.btq;Job=__TWS_SCHED__;' FOR SESSION;
+
+DROP TABLE  two_week_space.epm_acdates_mstr;
+
+CREATE MULTISET TABLE two_week_space.epm_acdates_mstr ,NO FALLBACK ,
+     NO BEFORE JOURNAL,
+     NO AFTER JOURNAL,
+     CHECKSUM = DEFAULT,
+     DEFAULT MERGEBLOCKRATIO
+     (
+      RUN_DT DATE FORMAT 'YYYY-MM-DD',
+      RPT_VER_CD VARCHAR(10) CHARACTER SET LATIN NOT CASESPECIFIC,
+      RN_TYP VARCHAR(10) CHARACTER SET LATIN NOT CASESPECIFIC,
+      CAL_TYP_CD CHAR(4) CHARACTER SET LATIN NOT CASESPECIFIC,
+      CAL_PER_STRT_DT DATE FORMAT 'YYYY-MM-DD',
+      CAL_PER_END_DT DATE FORMAT 'YYYY-MM-DD',
+      CAL_PER_ABBR_TXT CHAR(3) CHARACTER SET LATIN NOT CASESPECIFIC,
+      CAL_PER_NM VARCHAR(10) CHARACTER SET LATIN NOT CASESPECIFIC,
+      PST_PER CHAR(6) CHARACTER SET LATIN NOT CASESPECIFIC,
+      per_strt INTEGER,
+      per_end INTEGER)
+UNIQUE PRIMARY INDEX ( RUN_DT ,RN_TYP ,CAL_TYP_CD );
+
+.if ERRORLEVEL <> 0 THEN .GOTO FAILURE
+ 
+ COLLECT STATS ON two_week_space.epm_acdates_mstr column (RUN_DT ,RN_TYP ,CAL_TYP_CD);
+ 
+.if ERRORLEVEL <> 0 THEN .GOTO FAILURE
+.quit 0 
+ 
+.LABEL FAILURE
+.REMARK '*** BTEQ error detected. ***'
+.quit 99   

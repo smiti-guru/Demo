@@ -1,0 +1,90 @@
+/*****************************************************************************/
+/* Name:    epm_acdates_run_mstr.btq    	                             */
+/*                                                                           */
+/* Description: To populate the epm dates table for the GPI run.             */
+/*									     */
+/*****************************************************************************/
+/* Date        Who  	   Release                                           */
+/* _________   __________  _______________________________________________   */
+/* 01/15/2017  T83049[RM]  QA:CHG0167530 PROD:CHG0162868 Release 12 Changes  */
+/*****************************************************************************/
+
+.logon td9/t83049,Nov@2016;
+
+.set MAXERROR 1
+.set ERRORLEVEL 3624 SEVERITY 0; /* ignore collect statistics error  */
+.set ERROROUT STDOUT
+
+SET QUERY_BAND='UTILITYNAME=BTEQ;OSUSER=__LOGNAME__;PROJECT=EPM;PROCESS/REPORT=epm_acdates_run_mstr.btq;Job=__TWS_SCHED__;' FOR SESSION;
+
+
+DELETE FROM two_week_space.epm_acdates_mstr
+WHERE pst_per='&pst_per'
+and RPT_VER_CD ='&rpt_ver_cd' ;
+
+.if ERRORLEVEL <> 0 THEN .GOTO FAILURE
+
+LOCKING TABLE NSR_TABLES.ACDATES_MSTR FOR ACCESS
+
+---selecting new cal_dt as schedules will run at the weekend of the closing week or a week after the closing week.
+Insert into  two_week_space.epm_acdates_mstr
+(run_dt
+,rn_typ
+,cal_typ_cd
+,cal_per_strt_dt
+,cal_per_end_dt
+,cal_per_abbr_txt
+,cal_per_nm
+,pst_per
+,rpt_ver_cd
+,per_strt
+,per_end
+)
+ SEL
+current_date -1
+,'YTD' (CHAR(04))
+,cal_typ_cd
+,Cal_yr_strt_dt as strt_dt
+,cal_per_end_dt as end_dt
+,cal_per_abbr_txt
+,cal_per_nm
+,trim(cur_yr_ac_prd)(char(6))
+,'&rpt_ver_cd' as rpt_ver_cd
+,cur_yr_ac_prd as per_strt
+,cur_yr_ac_prd as per_end
+from NSR_TABLES.acdates_mstr 
+where 
+cur_yr_ac_prd ='&pst_per'
+group by 1,2,3,4,5,6,7,8,9,10,11
+
+UNION ALL
+
+ SEL
+current_date -1
+,'CURR' (CHAR(04))
+,cal_typ_cd
+,Cal_per_strt_dt as strt_dt
+,cal_per_end_dt as end_dt
+,cal_per_abbr_txt
+,cal_per_nm
+,trim(cur_yr_ac_prd)(char(6))
+,'&rpt_ver_cd' as rpt_ver_cd
+,cur_yr_ac_prd as per_strt
+,cur_yr_ac_prd as per_end
+from NSR_TABLES.acdates_mstr 
+where
+cur_yr_ac_prd ='&pst_per'
+group by 1,2,3,4,5,6,7,8,9,10,11
+;
+
+                 
+.if ERRORLEVEL <> 0 THEN .GOTO FAILURE
+ 
+ COLLECT STATS ON two_week_space.epm_acdates_mstr;
+.if ERRORLEVEL <> 0 THEN .GOTO FAILURE
+.quit 0 
+ 
+.LABEL FAILURE
+.REMARK '*** BTEQ error detected. ***'
+.quit 99                 
+                 
