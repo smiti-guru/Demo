@@ -13,7 +13,7 @@
 # 09/14/2016  T89228[OK] QA:CHG0162867 PROD:CHG0162868 Release 12 Changes  #
 # 10/27/2016  T81657[SV] QA:CHG0167414 PROD:CHG0167415 Final run ACDATES   #
 #                                    		 	update issue fix   		   #
-# 01/15/2017  T83049[RM] QA:CHG0167414 PROD:CHG0167415 Final run ACDATES   #
+# 01/18/2017  T83049[RM] QA:CHG0167414 PROD:CHG0167415 Final run ACDATES   #
 ############################################################################
 
 date +"*** `basename $0` Executing  %Y%m%d %T"
