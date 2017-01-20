@@ -80,8 +80,7 @@ sed -e "s,&pst_per,${pst_per},g" \
     -e "s,&rpt_ver_cd,${rpt_ver_cd},g" \
     -e "s,__LOGNAME__,${LOGNAME},g" \
     -e "s,__TWS_SCHED__,$TWS_SCHED,g" \
-/home/t83049/devops/`basename $0 .sh`.btq > 
-/home/t83049/devops/`basename $0 .sh`_btq.tmp
+/home/t83049/devops/`basename $0 .sh`.btq > /home/t83049/devops/`basename $0 .sh`_btq.tmp
 bteq < /home/t83049/devops/DDL.btq
 bteq < /home/t83049/devops/`basename $0 .sh`_btq.tmp
 

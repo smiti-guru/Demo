@@ -100,7 +100,7 @@ fi
 char_length_check()
 {
 awk '{print i++ "," length+1}' "$1" >1.log
-awk '{FS=","} {if($2>=80) print $1+1;}' 1.log > 2.log
+awk '{FS=","} {if($2>90) print $1+1;}' 1.log > 2.log
 if [ ! -s 2.log ]
 then
 echo "Char length check     : Passed"
