@@ -60,6 +60,7 @@ then
 echo "DB hardcode check     : Passed"
 else
 echo "DB hardcode check     : Failed"
+exit 1
 #echo " following database names are hard-coded at : `cat db_name_check.txt`" 
 fi
 } #two parameters file_name to be validated and non sec file names
@@ -106,6 +107,7 @@ echo "Char length check     : Passed"
 else
 echo "Char length check     : Failed"
 echo "Script failed as the number of characters are exceeding 80"
+exit 1
 fi
 } #one parameter file name
 
