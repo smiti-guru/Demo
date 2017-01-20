@@ -74,7 +74,8 @@ else
 echo "Not a Valid day for run"
 fi
 
-#sed  -f $epm_nonsec_fil -f $epm_sec_fil \#sed-f '/apps/dev/epm/files/epm_nonsec.fil' -f '/home/t83049/sec/epm_sec.fil'
+#sed  -f $epm_nonsec_fil -f $epm_sec_fil \
+#sed-f '/apps/dev/epm/files/epm_nonsec.fil' -f '/home/t83049/sec/epm_sec.fil'
 sed -e "s,&pst_per,${pst_per},g" \
     -e "s,&rpt_ver_cd,${rpt_ver_cd},g" \
     -e "s,__LOGNAME__,${LOGNAME},g" \
