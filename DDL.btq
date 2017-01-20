@@ -10,7 +10,7 @@
 /* 01/19/2017  T89228[RM]  QA:CHG0167530 PROD:CHG0162868 Release 12 Changes  */
 /*****************************************************************************/
 
-.logon td9/t83049,Jan@2017;
+.logon td9/t89228,Nov#1620;
 
 .set MAXERROR 1
 .set ERRORLEVEL 3624 SEVERITY 0; /* ignore collect statistics error  */
