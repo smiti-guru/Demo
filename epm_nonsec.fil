@@ -1,0 +1,38 @@
+################################################################################
+#
+# Date       By         Description
+# ---------- --- ------ --------------------------------------------------------
+# 2014-01-14 IS  T73800 QA: CHG0063782  prod: CHG0063785
+#                       Initial version
+#
+################################################################################
+s/&mload_spool/mload_spool/g
+s/&dbcontrol/NSR_TABLES/g
+s/&dbview/NSR_TVM_SELECT/g
+s/&dbdlvrpnt/NSR_DELIVERY_POINT/g
+s/&dbdlyinvoice/NSR_INVOICE/g
+s/&dbdlylines/NSR_LINES/g
+s/&dbiwrviews/IWR_VIEWS/g
+s/&dbiwrtables/IWR_TABLES/g
+s/&dbworktables/WORK_TABLES/g
+s/&mload_sessions/12/g
+s/&fexp_sessions/12/g
+#s/&dbcorpinvoice/CORP_INVOICE/g
+s/&dbcorpinvoice/EPM_TEMP_TABLES/g
+#s/&dbcorplines/CORP_LINES/g
+s/&dbcorplines/EPM_TEMP_TABLES/g
+s/&dbepmtemp/EPM_TEMP_TABLES/g
+#s/&dbepm/EPM_TABLES/g
+#s/&dbepmtemp/EPM_TEMP_TABLES/g
+s/&dbepmtables/EPM_TABLES/g
+s/&dbepmviews/EPM_VIEWS/g
+s/&dbepmrptviews/EPM_RPT_VIEWS/g
+s/&dbslstemp/sls_temp_tables/g
+s/&dbcbstables/CBS_TABLES/g
+s/&dbcontrol/NSR_TABLES/g
+s/&dbcbsviews/CBS_VIEWS/g
+s/&dbcbsmeviews/CBS_ME_VIEWS/g
+s/&dbbctables/EW_BATCH_CONTROL/g
+s/&dbdlvrpnt/NSR_DELIVERY_POINT/g
+s/&period_date_input/201503/g
+#end of file
