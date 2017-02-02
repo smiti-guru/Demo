@@ -19,8 +19,8 @@ SET QUERY_BAND='UTILITYNAME=BTEQ;OSUSER=__LOGNAME__;PROJECT=EPM;PROCESS/REPORT=e
 
 
 DELETE FROM two_week_space.epm_acdates_mstr
-WHERE pst_per='&pst_per'
-and RPT_VER_CD ='&rpt_ver_cd' ;
+WHERE pst_per= '201601'
+and RPT_VER_CD ='F';
 
 .if ERRORLEVEL <> 0 THEN .GOTO FAILURE
 
@@ -49,12 +49,12 @@ current_date -1
 ,cal_per_abbr_txt
 ,cal_per_nm
 ,trim(cur_yr_ac_prd)(char(6))
-,'&rpt_ver_cd' as rpt_ver_cd
+,'F' as rpt_ver_cd
 ,cur_yr_ac_prd as per_strt
 ,cur_yr_ac_prd as per_end
 from NSR_TABLES.acdates_mstr 
 where 
-cur_yr_ac_prd ='&pst_per'
+cur_yr_ac_prd = '201601'
 group by 1,2,3,4,5,6,7,8,9,10,11
 
 UNION ALL
@@ -68,12 +68,12 @@ current_date -1
 ,cal_per_abbr_txt
 ,cal_per_nm
 ,trim(cur_yr_ac_prd)(char(6))
-,'&rpt_ver_cd' as rpt_ver_cd
+,'F' as rpt_ver_cd
 ,cur_yr_ac_prd as per_strt
 ,cur_yr_ac_prd as per_end
 from NSR_TABLES.acdates_mstr 
 where
-cur_yr_ac_prd ='&pst_per'
+cur_yr_ac_prd = '201601'
 group by 1,2,3,4,5,6,7,8,9,10,11
 ;
 
