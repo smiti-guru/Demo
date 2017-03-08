@@ -1,0 +1,1204 @@
+/***************************************************************************/
+/* Name:    cbs_data_qual_dash_load.btq                                    */
+/*                                                                         */
+/* Description:                                                            */
+/*                                                                         */
+/* Date       Who   Release      Modification                              */
+/* _______    ___   __________   _____________________   _________________ */
+/* 26-06-16   T82474  Initial Version                                      */
+/* 07-05-16   T79288  Indicator for out of balance QA CR:CHG0157491        */             
+/* 2016-08-03 RR T79288  QA:CHG0158826 Prod:CHG0158873                     */ 
+/* 2016-08-12 RR T79288  QA:CHG0159550 Prod:CHG0158873                     */ 
+/***************************************************************************/
+
+
+.logon &logon;
+.errorout STDOUT
+.set ERRORLEVEL 3624 SEVERITY 0
+
+SET QUERY_BAND='UTILITYNAME=BTEQ;OSUSER=__LOGNAME__;PROJECT=;PROCESS/REPORT=cbs_data_qual_dash_load.btq;Job=__TWS_SCHED__;' FOR SESSION;
+
+
+Create Multiset Volatile table Btlr_Batch_Active_Status
+		, no fallback
+		, no log
+	(
+		 ownrshp_id         INTEGER 
+		,Btlr_Branch_No     CHAR(10)
+		,Setl_Dt            DATE 
+	)
+primary index (ownrshp_id, Btlr_Branch_No,Setl_Dt) 
+on commit preserve rows
+;
+.if errorcode <> 0 then .goto FAILURE
+
+Insert into Btlr_Batch_Active_Status 
+(
+	 ownrshp_id
+	,Btlr_Branch_No
+	,Setl_Dt
+)
+Select ownrshp_id
+	,Btlr_Branch_No
+	,Setl_Dt
+From  &dbiwrviews.Batch_Control
+where ownrshp_id not in (10,180,790)
+and ownrshp_id <= 879
+and App_Id = 'SLS'
+and Required_flag = 'Y'
+group by 1,2,3
+;
+.if errorcode <> 0 then .goto FAILURE
+
+Collect stats on Btlr_Batch_Active_Status 
+Index(ownrshp_id, Btlr_Branch_No,Setl_Dt) 
+;
+.if errorcode <> 0 then .goto FAILURE
+
+Delete 
+From &dbcbstemp.DATA_QUAL_SUSP_VOL_Temp
+;
+.if errorcode <> 0 then .goto FAILURE
+
+Insert into &dbcbstemp.DATA_QUAL_SUSP_VOL_Temp
+(
+	  ownrshp_id
+	  ,btlr_branch_no
+	  ,Setl_Dt
+	  ,btlr_material_no
+	  ,cce_material_no
+	  ,btlr_dlvr_pnt_no
+	  ,Lvl1_ID
+	  ,Lvl1_Desc
+	  ,Lvl2_ID
+	  ,Lvl2_Desc
+	  ,Lvl3_ID
+	  ,Lvl3_Desc
+	  ,Lvl4_ID
+	  ,Lvl4_Desc
+	  ,Lvl5_ID
+	  ,Lvl5_Desc
+	  ,Lvl6_ID
+	  ,Lvl6_Desc
+	  ,Lvl7_ID
+	  ,Lvl7_Desc
+	  ,Susp_Vol
+	  ,Susp_Vol_Ind 
+      ,cret_tmst
+	  ,cret_usr_id
+	  ,updt_tmst
+	  ,updt_usr_id
+)
+Select FSMGHier.OwnershipID as ownrshp_id
+      ,Susp.BTLR_SETTLEMENT_BRANCH as btlr_branch_no
+      ,Susp.SETTLEMENT_DT as Setl_Dt
+      ,Susp.LOCAL_MATERIAL_NO as btlr_material_no
+      ,Susp.CCE_MATERIAL_NO as cce_material_no
+      ,Susp.BTLR_DLVR_PNT_NO as btlr_dlvr_pnt_no
+      ,FSMGHier.Lvl1_ID
+      ,FSMGHier.Lvl1_Desc
+      ,FSMGHier.Lvl2_ID
+      ,FSMGHier.Lvl2_Desc
+      ,FSMGHier.Lvl3_ID
+      ,FSMGHier.Lvl3_Desc
+      ,FSMGHier.Lvl4_ID
+      ,FSMGHier.Lvl4_Desc
+      ,FSMGHier.Lvl5_ID
+      ,FSMGHier.Lvl5_Desc
+      ,FSMGHier.Lvl6_ID
+      ,FSMGHier.Lvl6_Desc
+      ,FSMGHier.Lvl7_ID
+      ,FSMGHier.Lvl7_Desc
+      ,Susp.Susp_Vol
+      ,0 
+      ,CURRENT_TIMESTAMP(0)  cret_tmst
+      ,USER cret_usr_id
+      ,CURRENT_TIMESTAMP(0)  updt_tmst
+      ,USER updt_usr_id
+From &dbcbsmeviews.DATA_QUAL_FSMG_HIER FSMGHier
+     ,( Select   Inv.ownrshp_id
+				,Inv.BTLR_SETTLEMENT_BRANCH
+				,Inv.SETTLEMENT_DT
+				,Inv.CCE_MATERIAL_NO
+				,Inv.LOCAL_MATERIAL_NO
+				,Inv.BTLR_DLVR_PNT_NO
+				,Coalesce(Sum(Inv.Qty),0) Susp_Vol
+		  from   &dbiwrviews.Suspended_Invoice_line_Item Inv
+				Left outer Join &dbcontrol.prodet Prod
+		    on Prod.cce_material_no = Inv.cce_material_no
+		  where Inv.ownrshp_id not in (10,180,790)
+			and Inv.ownrshp_id <= 879
+			and Coalesce(Inv.Qty,0) <> 0
+			and (Prod.Franchse is null 
+					or Prod.Franchse not in (3,4,6) 
+						-- eliminating codes for exclusions
+				)
+		Group by 1,2,3,4,5,6
+	  ) Susp
+	  ,Btlr_Batch_Active_Status Branch
+where FSMGHier.OwnershipID = Susp.ownrshp_id  
+and FSMGHier.Branch_Number = Susp.BTLR_SETTLEMENT_BRANCH
+and FSMGHier.OwnershipID not in (10,180,790)
+and Branch.ownrshp_id = Susp.ownrshp_id  
+and Branch.Btlr_Branch_No = Susp.BTLR_SETTLEMENT_BRANCH
+and Branch.Setl_Dt = Susp.SETTLEMENT_DT
+;
+.if errorcode <> 0 then .goto FAILURE
+
+
+
+Insert into &dbcbstemp.DATA_QUAL_SUSP_VOL_Temp
+(
+	  ownrshp_id
+	  ,btlr_branch_no
+	  ,Setl_Dt
+	  ,btlr_material_no
+	  ,cce_material_no
+	  ,btlr_dlvr_pnt_no
+	  ,Lvl1_ID
+	  ,Lvl1_Desc
+	  ,Lvl2_ID
+	  ,Lvl2_Desc
+	  ,Lvl3_ID
+	  ,Lvl3_Desc
+	  ,Lvl4_ID
+	  ,Lvl4_Desc
+	  ,Lvl5_ID
+	  ,Lvl5_Desc
+	  ,Lvl6_ID
+	  ,Lvl6_Desc
+	  ,Lvl7_ID
+	  ,Lvl7_Desc
+	  ,Susp_Vol
+	  ,Susp_Vol_Ind 
+      ,cret_tmst
+	  ,cret_usr_id
+	  ,updt_tmst
+	  ,updt_usr_id
+)
+Select FSMGHier.OwnershipID as ownrshp_id
+      ,Susp.BTLR_SETTLEMENT_BRANCH as btlr_branch_no
+      ,Susp.SETTLEMENT_DT as Setl_Dt
+      ,Susp.LOCAL_MATERIAL_NO as btlr_material_no
+      ,Susp.CCE_MATERIAL_NO as cce_material_no
+      ,Susp.BTLR_DLVR_PNT_NO as btlr_dlvr_pnt_no
+      ,FSMGHier.Lvl1_ID
+      ,FSMGHier.Lvl1_Desc
+      ,FSMGHier.Lvl2_ID
+      ,FSMGHier.Lvl2_Desc
+      ,FSMGHier.Lvl3_ID
+      ,FSMGHier.Lvl3_Desc
+      ,FSMGHier.Lvl4_ID
+      ,FSMGHier.Lvl4_Desc
+      ,FSMGHier.Lvl5_ID
+      ,FSMGHier.Lvl5_Desc
+      ,FSMGHier.Lvl6_ID
+      ,FSMGHier.Lvl6_Desc
+      ,FSMGHier.Lvl7_ID
+      ,FSMGHier.Lvl7_Desc
+      ,Outb.Outb_Vol
+      ,1 
+      ,CURRENT_TIMESTAMP(0)  cret_tmst
+      ,USER cret_usr_id
+      ,CURRENT_TIMESTAMP(0)  updt_tmst
+      ,USER updt_usr_id
+From &dbcbsmeviews.DATA_QUAL_FSMG_HIER FSMGHier
+     ,( Select   Inv.ownrshp_id
+				,Inv.BTLR_SETTLEMENT_BRANCH
+				,Inv.SETTLEMENT_DT
+				,Inv.CCE_MATERIAL_NO
+				,Inv.LOCAL_MATERIAL_NO
+				,Inv.BTLR_DLVR_PNT_NO
+		  from   &dbiwrviews.Suspended_Invoice_line_Item Inv
+				Left outer Join &dbcontrol.prodet Prod
+		    on Prod.cce_material_no = Inv.cce_material_no
+		  where Inv.ownrshp_id not in (10,180,790)
+			and Inv.ownrshp_id <= 879
+			and (Prod.Franchse is null 
+					or Prod.Franchse not in (3,4,6) 
+					-- eliminating codes for exclusions
+				)			
+		Group by 1,2,3,4,5,6
+	  ) Susp
+	 ,(Select ownrshp_id
+		,BTLR_SETTLEMENT_BRANCH
+		,SETTLEMENT_DT
+		,Coalesce(Sum(Qty),0) Outb_Vol
+		from &dbiwrviews.OUT_Of_BAL_SLS_INVOICE
+		where Coalesce(Qty,0) <> 0
+		and ownrshp_id not in (10,180,790)
+		and ownrshp_id <= 879
+		Group by 1,2,3
+	 ) Outb
+	 ,Btlr_Batch_Active_Status Branch
+Where Susp.ownrshp_id = Outb.ownrshp_id
+and Susp.BTLR_SETTLEMENT_BRANCH = Outb.BTLR_SETTLEMENT_BRANCH
+and Susp.SETTLEMENT_DT = Outb.SETTLEMENT_DT
+and FSMGHier.OwnershipID = Susp.ownrshp_id  
+and FSMGHier.Branch_Number = Susp.BTLR_SETTLEMENT_BRANCH
+and FSMGHier.OwnershipID not in (10,180,790)
+and Branch.ownrshp_id = Susp.ownrshp_id  
+and Branch.Btlr_Branch_No = Susp.BTLR_SETTLEMENT_BRANCH
+and Branch.Setl_Dt = Susp.SETTLEMENT_DT
+;
+.if errorcode <> 0 then .goto FAILURE
+
+Collect stats on &dbcbstemp.DATA_QUAL_SUSP_VOL_Temp
+index(ownrshp_id ,btlr_branch_no ,setl_dt ,btlr_material_no ,
+cce_material_no ,btlr_dlvr_pnt_no)
+;
+.if errorcode <> 0 then .goto FAILURE
+
+/* Delete those records that are 
+existing in the target table but not present in the source.
+In other words, removing those invoices that were earlier had suspended 
+volume and got delivered now (based on recent load data).
+Just to retain only snapshot information in the table
+*/
+
+Delete
+From  &dbcbstables.DATA_QUAL_SUSP_VOL
+Where (ownrshp_id,btlr_branch_no,Setl_Dt,
+		btlr_material_no,cce_material_no,
+		btlr_dlvr_pnt_no,Susp_Vol_Ind) 
+	   not in
+	   (Select ownrshp_id,btlr_branch_no,Setl_Dt,
+				btlr_material_no,cce_material_no,
+				btlr_dlvr_pnt_no,Susp_Vol_Ind
+		from &dbcbstemp.DATA_QUAL_SUSP_VOL_Temp Src
+		)
+;
+.if errorcode <> 0 then .goto FAILURE
+
+				
+MERGE INTO &dbcbstables.DATA_QUAL_SUSP_VOL Tgt
+USING  &dbcbstemp.DATA_QUAL_SUSP_VOL_Temp Src
+ON (
+	  Src.ownrshp_id = Tgt.ownrshp_id
+	  and Src.btlr_branch_no = Tgt.btlr_branch_no
+	  and Src.Setl_dt = Tgt.Setl_Dt
+	  and Src.btlr_material_no = Tgt.btlr_material_no
+	  and Src.cce_material_no = Tgt.cce_material_no
+	  and Src.btlr_dlvr_pnt_no = Tgt.btlr_dlvr_pnt_no
+	  and Src.Susp_Vol_Ind = Tgt.Susp_Vol_Ind
+    )
+WHEN MATCHED THEN 
+UPDATE SET Lvl1_ID 	= Src.Lvl1_ID
+		 ,Lvl1_Desc = Src.Lvl1_Desc
+		,Lvl2_ID 	= Src.Lvl2_ID
+		,Lvl2_Desc 	= Src.Lvl2_Desc
+		,Lvl3_ID 	= Src.Lvl3_ID
+		,Lvl3_Desc 	= Src.Lvl3_Desc
+		,Lvl4_ID 	= Src.Lvl4_ID
+		,Lvl4_Desc 	= Src.Lvl4_Desc
+		,Lvl5_ID 	= Src.Lvl5_ID
+		,Lvl5_Desc 	= Src.Lvl5_Desc
+		,Lvl6_ID 	= Src.Lvl6_ID
+		,Lvl6_Desc 	= Src.Lvl6_Desc
+		,Lvl7_ID 	= Src.Lvl7_ID
+		,Lvl7_Desc 	= Src.Lvl7_Desc
+		,Susp_Vol 	= Src.Susp_Vol
+		,Susp_Vol_Ind = Src.Susp_Vol_Ind
+		,updt_tmst 	= Src.updt_tmst
+		,updt_usr_id = Src.updt_usr_id
+WHEN NOT MATCHED THEN 
+          INSERT
+               (
+				ownrshp_id
+				,btlr_branch_no
+				,Setl_Dt
+				,btlr_material_no
+				,cce_material_no
+				,btlr_dlvr_pnt_no
+				,Lvl1_ID
+				,Lvl1_Desc
+				,Lvl2_ID
+				,Lvl2_Desc
+				,Lvl3_ID
+				,Lvl3_Desc
+				,Lvl4_ID
+				,Lvl4_Desc
+				,Lvl5_ID
+				,Lvl5_Desc
+				,Lvl6_ID
+				,Lvl6_Desc
+				,Lvl7_ID
+				,Lvl7_Desc
+				,Susp_Vol
+				,Susp_Vol_Ind
+				,cret_tmst
+				,cret_usr_id
+				,updt_tmst
+				,updt_usr_id
+               ) 
+            VALUES
+               (
+				Src.ownrshp_id
+				,Src.btlr_branch_no
+				,Src.Setl_Dt
+				,Src.btlr_material_no
+				,Src.cce_material_no
+				,Src.btlr_dlvr_pnt_no
+				,Src.Lvl1_ID
+				,Src.Lvl1_Desc
+				,Src.Lvl2_ID
+				,Src.Lvl2_Desc
+				,Src.Lvl3_ID
+				,Src.Lvl3_Desc
+				,Src.Lvl4_ID
+				,Src.Lvl4_Desc
+				,Src.Lvl5_ID
+				,Src.Lvl5_Desc
+				,Src.Lvl6_ID
+				,Src.Lvl6_Desc
+				,Src.Lvl7_ID
+				,Src.Lvl7_Desc
+				,Src.Susp_Vol
+				,Src.Susp_Vol_Ind
+				,Src.cret_tmst
+				,Src.cret_usr_id
+				,Src.updt_tmst
+				,Src.updt_usr_id
+               ) 
+;
+.if errorcode <> 0 then .goto FAILURE
+
+Collect stats on &dbcbstables.DATA_QUAL_SUSP_VOL
+Index (ownrshp_id ,btlr_branch_no ,setl_dt ,btlr_material_no ,
+cce_material_no ,btlr_dlvr_pnt_no)
+;
+.if errorcode <> 0 then .goto FAILURE
+
+Collect stats on &dbcbstables.DATA_QUAL_SUSP_VOL
+column (ownrshp_id ,btlr_branch_no ,setl_dt )
+;
+.if errorcode <> 0 then .goto FAILURE
+
+Delete 
+From &dbcbstemp.DATA_QUAL_EST_VOL_Temp
+;
+.if errorcode <> 0 then .goto FAILURE
+
+Insert into &dbcbstemp.DATA_QUAL_EST_VOL_Temp
+(
+	   ownrshp_id
+	  ,btlr_branch_no
+	  ,setl_dt
+	  ,cce_material_no
+	  ,btlr_dlvr_pnt_no
+	  ,Lvl1_ID
+	  ,Lvl1_Desc
+	  ,Lvl2_ID
+	  ,Lvl2_Desc
+	  ,Lvl3_ID
+	  ,Lvl3_Desc
+	  ,Lvl4_ID
+	  ,Lvl4_Desc
+	  ,Lvl5_ID
+	  ,Lvl5_Desc
+	  ,Lvl6_ID
+	  ,Lvl6_Desc
+	  ,Lvl7_ID
+	  ,Lvl7_Desc
+	  ,Est_vol
+	  ,cret_tmst
+	  ,cret_usr_id
+	  ,updt_tmst
+	  ,updt_usr_id
+)
+Select Est.ownrshp_id
+	  ,Est.BTLR_SETL_BRANCH_NO
+	  ,Est.SETL_DT
+	  ,Est.CCE_MATERIAL_NO
+	  ,Est.BTLR_DLVR_PNT_NO
+      ,FSMGHier.Lvl1_ID
+      ,FSMGHier.Lvl1_Desc
+      ,FSMGHier.Lvl2_ID
+      ,FSMGHier.Lvl2_Desc
+      ,FSMGHier.Lvl3_ID
+      ,FSMGHier.Lvl3_Desc
+      ,FSMGHier.Lvl4_ID
+      ,FSMGHier.Lvl4_Desc
+      ,FSMGHier.Lvl5_ID
+      ,FSMGHier.Lvl5_Desc
+      ,FSMGHier.Lvl6_ID
+      ,FSMGHier.Lvl6_Desc
+      ,FSMGHier.Lvl7_ID
+      ,FSMGHier.Lvl7_Desc
+      ,Est.Est_vol
+      ,CURRENT_TIMESTAMP(0)  cret_tmst
+      ,USER cret_usr_id
+      ,CURRENT_TIMESTAMP(0)  updt_tmst
+      ,USER updt_usr_id
+From &dbcbsmeviews.DATA_QUAL_FSMG_HIER FSMGHier
+     ,(Select Est0.ownrshp_id
+			 , Est0.BTLR_SETL_BRANCH_NO
+			 , Est0.SETL_DT
+			 , Est0.CCE_MATERIAL_NO
+			 , Est0.BTLR_DLVR_PNT_NO
+			 , Coalesce(Sum(EST_QTY),0) as Est_vol
+		 from &dbcorplinesviews.CBS_BTLR_EST  Est0
+				Left outer Join &dbcontrol.prodet Prod
+		    on Prod.cce_material_no = Est0.cce_material_no
+		  where Est0.ownrshp_id not in (10,180,790)
+			and Est0.ownrshp_id <= 879
+   		    and Coalesce(EST_QTY,0) <> 0
+			and (Prod.Franchse is null 
+					or Prod.Franchse not in (3,4,6) 
+					-- eliminating codes for exclusions
+				)				 
+		Group by 1,2,3,4,5
+	  ) Est
+	  ,Btlr_Batch_Active_Status Branch
+where FSMGHier.OwnershipID = Est.ownrshp_id  
+and FSMGHier.Branch_Number = Est.BTLR_SETL_BRANCH_NO
+and Branch.ownrshp_id = Est.ownrshp_id  
+and Branch.Btlr_Branch_No = Est.BTLR_SETL_BRANCH_NO
+and Branch.Setl_Dt = Est.SETL_DT
+;
+.if errorcode <> 0 then .goto FAILURE
+
+Collect stats on &dbcbstemp.DATA_QUAL_EST_VOL_Temp
+Index (ownrshp_id ,btlr_branch_no ,setl_dt ,cce_material_no ,
+btlr_dlvr_pnt_no)
+;
+.if errorcode <> 0 then .goto FAILURE
+
+
+
+/* Delete those records that are 
+existing in the target table but not present in the source.
+*/
+
+Delete
+From  &dbcbstables.DATA_QUAL_EST_VOL
+Where (ownrshp_id,btlr_branch_no,Setl_Dt,
+		cce_material_no,
+		btlr_dlvr_pnt_no) 
+	   not in
+	   (Select ownrshp_id,btlr_branch_no,Setl_Dt,
+				cce_material_no,
+				btlr_dlvr_pnt_no
+		from &dbcbstemp.DATA_QUAL_EST_VOL_Temp Src
+		)
+;
+.if errorcode <> 0 then .goto FAILURE
+
+
+MERGE INTO &dbcbstables.DATA_QUAL_EST_VOL Tgt
+USING  &dbcbstemp.DATA_QUAL_EST_VOL_Temp Src
+ON (
+	  Src.ownrshp_id = Tgt.ownrshp_id
+	  and Src.btlr_branch_no = Tgt.btlr_branch_no
+	  and Src.Setl_Dt = Tgt.Setl_Dt
+	  and Src.cce_material_no = Tgt.cce_material_no
+	  and Src.btlr_dlvr_pnt_no = Tgt.btlr_dlvr_pnt_no
+    )
+WHEN MATCHED THEN 
+UPDATE SET Lvl1_ID 	= Src.Lvl1_ID
+		 ,Lvl1_Desc = Src.Lvl1_Desc
+		,Lvl2_ID 	= Src.Lvl2_ID
+		,Lvl2_Desc 	= Src.Lvl2_Desc
+		,Lvl3_ID 	= Src.Lvl3_ID
+		,Lvl3_Desc 	= Src.Lvl3_Desc
+		,Lvl4_ID 	= Src.Lvl4_ID
+		,Lvl4_Desc 	= Src.Lvl4_Desc
+		,Lvl5_ID 	= Src.Lvl5_ID
+		,Lvl5_Desc 	= Src.Lvl5_Desc
+		,Lvl6_ID 	= Src.Lvl6_ID
+		,Lvl6_Desc 	= Src.Lvl6_Desc
+		,Lvl7_ID 	= Src.Lvl7_ID
+		,Lvl7_Desc 	= Src.Lvl7_Desc
+		,Est_vol 	= Src.Est_vol
+		,updt_tmst 	= Src.updt_tmst
+		,updt_usr_id = Src.updt_usr_id
+WHEN NOT MATCHED THEN 
+          INSERT
+               (
+				ownrshp_id
+				,btlr_branch_no
+				,setl_dt
+				,cce_material_no
+				,btlr_dlvr_pnt_no
+				,Lvl1_ID
+				,Lvl1_Desc
+				,Lvl2_ID
+				,Lvl2_Desc
+				,Lvl3_ID
+				,Lvl3_Desc
+				,Lvl4_ID
+				,Lvl4_Desc
+				,Lvl5_ID
+				,Lvl5_Desc
+				,Lvl6_ID
+				,Lvl6_Desc
+				,Lvl7_ID
+				,Lvl7_Desc
+				,Est_vol
+				,cret_tmst
+				,cret_usr_id
+				,updt_tmst
+				,updt_usr_id
+               ) 
+            VALUES
+               (
+				Src.ownrshp_id
+				,Src.btlr_branch_no
+				,Src.Setl_Dt
+				,Src.cce_material_no
+				,Src.btlr_dlvr_pnt_no
+				,Src.Lvl1_ID
+				,Src.Lvl1_Desc
+				,Src.Lvl2_ID
+				,Src.Lvl2_Desc
+				,Src.Lvl3_ID
+				,Src.Lvl3_Desc
+				,Src.Lvl4_ID
+				,Src.Lvl4_Desc
+				,Src.Lvl5_ID
+				,Src.Lvl5_Desc
+				,Src.Lvl6_ID
+				,Src.Lvl6_Desc
+				,Src.Lvl7_ID
+				,Src.Lvl7_Desc
+				,Src.Est_vol
+				,Src.cret_tmst
+				,Src.cret_usr_id
+				,Src.updt_tmst
+				,Src.updt_usr_id
+               ) 
+;
+.if errorcode <> 0 then .goto FAILURE
+	
+Collect stats on &dbcbstables.DATA_QUAL_EST_VOL
+Index (ownrshp_id ,btlr_branch_no ,setl_dt ,cce_material_no ,
+btlr_dlvr_pnt_no)
+;
+.if errorcode <> 0 then .goto FAILURE
+
+Collect stats on &dbcbstables.DATA_QUAL_EST_VOL
+column (ownrshp_id ,btlr_branch_no ,setl_dt )
+;
+.if errorcode <> 0 then .goto FAILURE
+
+Create Multiset Volatile table Btlr_Batch_Control
+		, no fallback
+		, no log
+	(
+		 ownrshp_id         INTEGER 
+		,Btlr_Branch_No CHAR(10)
+		,Setl_Dt DATE 
+		,Max_Setl_Dt DATE
+	)
+primary index (ownrshp_id, Btlr_Branch_No,Setl_Dt) 
+on commit preserve rows
+;
+.if errorcode <> 0 then .goto FAILURE
+
+
+Create Multiset Volatile table Btlr_Batch_compl_status
+		, no fallback
+		, no log
+	(
+           ownrshp_id   INTEGER
+          ,Btlr_Branch_No CHAR(10)
+          ,Setl_Dt DATE
+          ,Data_Typ_Id CHAR(5)
+		  ,Balance_flag CHAR(4) 
+          ,Completion_Flag CHAR(4)
+	)
+primary index (ownrshp_id, Btlr_Branch_No, Setl_Dt) 
+on commit preserve rows
+;
+.if errorcode <> 0 then .goto FAILURE
+
+Create Multiset Volatile table Btlr_Miss_Day
+		, no fallback
+		, no log
+	(
+           ownrshp_id   INTEGER
+          ,Btlr_Branch_No CHAR(10)
+          ,Setl_Dt DATE
+          ,Data_Typ_Id CHAR(5)
+		  ,Balance_flag CHAR(4) 
+          ,Completion_Flag CHAR(4)
+	)
+primary index (ownrshp_id, Btlr_Branch_No, Setl_Dt) 
+on commit preserve rows
+;
+.if errorcode <> 0 then .goto FAILURE
+
+/*
+Delete 
+From Btlr_Batch_Control
+;
+
+*/
+
+Insert into Btlr_Batch_Control 
+(
+	 ownrshp_id
+	,Btlr_Branch_No
+	,Setl_Dt
+	,Max_Setl_Dt
+)
+Select Bch_cntl.ownrshp_id
+	,Bch_cntl.Btlr_Branch_No
+	,Bch_cntl.Setl_Dt
+	,max(Bch_cntl.Setl_Dt)  as Max_Setl_Dt
+From  &dbiwrviews.Batch_Control Bch_cntl
+where ownrshp_id not in (10,180,790)
+and ownrshp_id <= 879
+and Data_Typ_Id = 'INV'
+and App_Id = 'SLS'
+and Loc_Typ_Id = 'B'
+and Source_Id in ('CBS', 'CCE')
+and Process_Typ_Id = 'DETAIL'
+group by 1,2,3
+;
+.if errorcode <> 0 then .goto FAILURE
+
+
+/*
+Delete
+From Btlr_Batch_compl_status
+;
+
+*/
+
+Insert into Btlr_Batch_compl_status 
+(
+	 ownrshp_id
+	,Btlr_Branch_No
+	,Setl_Dt
+	,Data_Typ_Id
+	,Balance_flag
+	,Completion_Flag
+)
+Select   Btch.ownrshp_id
+	,Btch.Btlr_Branch_No
+	,Setl_Dt
+	,Data_Typ_Id
+	,balance_flag
+	,Completion_Flag
+from  &dbiwrviews.Batch_Control Btch
+,&dbcbsmeviews.DATA_QUAL_FSMG_HIER FSMGHier
+where FSMGHier.OwnershipID = Btch.ownrshp_id  
+and FSMGHier.Branch_Number = Btch.Btlr_Branch_No
+and Btch.ownrshp_id not in (10,180,790)
+and Btch.ownrshp_id <= 879
+and App_Id in ('SLS  ')
+and ((Required_Flag in ('Y')
+and (Completion_Flag not in ('C')
+or Completion_Flag is null))
+or ( Required_Flag in ('N')
+and Completion_Flag is not null
+and Completion_Flag not in ('C', 'E'))
+	)
+and Data_Typ_Id in ('INV', 'BAD')
+and Process_Typ_Id in ('RECEIVE')
+and Schdl_Process_Dt < Current_date
+Group by 1,2,3,4,5,6
+;
+.if errorcode <> 0 then .goto FAILURE
+
+
+
+
+/*
+Delete
+from Btlr_Miss_Day
+;
+
+*/
+
+Insert into Btlr_Miss_Day 
+(
+	 ownrshp_id
+	,Btlr_Branch_No
+	,Setl_Dt
+	,Data_Typ_Id
+	,Balance_flag
+	,Completion_Flag
+)
+Select   ownrshp_id
+	,Btlr_Branch_No
+	,Setl_Dt
+	,Data_Typ_Id
+	,balance_flag
+	,Completion_Flag
+from  Btlr_Batch_compl_status
+where  (ownrshp_id,Btlr_Branch_No,Setl_Dt)
+not in  (select   s21.ownrshp_id
+                 ,s21.Btlr_Branch_No
+                 ,s22.Setl_Dt
+          from  &dbiwrviews.BOTTLER_SALES_CENTER   s21
+          cross join &dbiwrviews.MN_Acdates_Setl   s22
+          where (s21.ownrshp_id,s21.Btlr_Branch_No,s22.Setl_Dt)
+          in      (select  ownrshp_id
+						,Btlr_Branch_No
+                        ,Setl_Dt
+                   from  Btlr_Batch_Control)
+				   group by    1,2,3 )
+;
+.if errorcode <> 0 then .goto FAILURE
+
+
+Delete 
+From &dbcbstemp.DATA_QUAL_MISS_DAY_Temp
+;
+.if errorcode <> 0 then .goto FAILURE
+
+Insert into &dbcbstemp.DATA_QUAL_MISS_DAY_Temp
+(
+		 btlr_branch_no
+		,ownrshp_id
+		,setl_dt
+		,Lvl1_ID
+		,Lvl1_Desc
+		,Lvl2_ID
+		,Lvl2_Desc
+		,Lvl3_ID
+		,Lvl3_Desc
+		,Lvl4_ID
+		,Lvl4_Desc
+		,Lvl5_ID
+		,Lvl5_Desc
+		,Lvl6_ID
+		,Lvl6_Desc
+		,Lvl7_ID
+		,Lvl7_Desc
+		,cret_tmst
+		,cret_usr_id
+		,updt_tmst
+		,updt_usr_id
+
+)
+Select	 Miss.btlr_branch_no
+		,Miss.ownrshp_id
+		,Miss.setl_dt
+		,FSMGHier.Lvl1_ID
+		,FSMGHier.Lvl1_Desc
+		,FSMGHier.Lvl2_ID
+		,FSMGHier.Lvl2_Desc
+		,FSMGHier.Lvl3_ID
+		,FSMGHier.Lvl3_Desc
+		,FSMGHier.Lvl4_ID
+		,FSMGHier.Lvl4_Desc
+		,FSMGHier.Lvl5_ID
+		,FSMGHier.Lvl5_Desc
+		,FSMGHier.Lvl6_ID
+		,FSMGHier.Lvl6_Desc
+		,FSMGHier.Lvl7_ID
+		,FSMGHier.Lvl7_Desc
+		,CURRENT_TIMESTAMP(0)  cret_tmst
+		,USER cret_usr_id
+		,CURRENT_TIMESTAMP(0)  updt_tmst
+		,USER updt_usr_id
+From &dbcbsmeviews.DATA_QUAL_FSMG_HIER FSMGHier
+     , (Select  btlr_branch_no
+	           ,ownrshp_id
+			   ,setl_dt
+	      from Btlr_Miss_Day  
+		Group by 1,2,3
+	   ) Miss
+	  ,Btlr_Batch_Active_Status Branch   
+where FSMGHier.OwnershipID = Miss.ownrshp_id  
+and FSMGHier.Branch_Number = Miss.btlr_branch_no
+and Miss.ownrshp_id not in (10,180,790)
+and Branch.ownrshp_id = Miss.ownrshp_id  
+and Branch.Btlr_Branch_No = Miss.btlr_branch_no
+and Branch.Setl_Dt = Miss.SETL_DT
+;
+.if errorcode <> 0 then .goto FAILURE
+
+
+Collect stats on &dbcbstemp.DATA_QUAL_MISS_DAY_Temp
+Index (ownrshp_id,btlr_branch_no,setl_dt)
+;
+.if errorcode <> 0 then .goto FAILURE
+
+/* Delete those records that are 
+existing in the target table but not present in the source.
+*/
+
+Delete
+From  &dbcbstables.DATA_QUAL_MISS_DAY
+Where (ownrshp_id,btlr_branch_no,Setl_Dt) 
+	   not in
+	   (Select ownrshp_id,btlr_branch_no,Setl_Dt
+		from &dbcbstemp.DATA_QUAL_MISS_DAY_Temp Src
+		)
+;
+.if errorcode <> 0 then .goto FAILURE
+
+
+MERGE INTO &dbcbstables.DATA_QUAL_MISS_DAY Tgt
+USING  &dbcbstemp.DATA_QUAL_MISS_DAY_Temp Src
+ON (
+	  Src.btlr_branch_no = Tgt.btlr_branch_no
+	  and Src.ownrshp_id = Tgt.ownrshp_id
+	  and Src.Setl_Dt = Tgt.Setl_Dt
+    )
+WHEN MATCHED THEN 
+UPDATE SET Lvl1_ID 	= Src.Lvl1_ID
+		 ,Lvl1_Desc = Src.Lvl1_Desc
+		,Lvl2_ID 	= Src.Lvl2_ID
+		,Lvl2_Desc 	= Src.Lvl2_Desc
+		,Lvl3_ID 	= Src.Lvl3_ID
+		,Lvl3_Desc 	= Src.Lvl3_Desc
+		,Lvl4_ID 	= Src.Lvl4_ID
+		,Lvl4_Desc 	= Src.Lvl4_Desc
+		,Lvl5_ID 	= Src.Lvl5_ID
+		,Lvl5_Desc 	= Src.Lvl5_Desc
+		,Lvl6_ID 	= Src.Lvl6_ID
+		,Lvl6_Desc 	= Src.Lvl6_Desc
+		,Lvl7_ID 	= Src.Lvl7_ID
+		,Lvl7_Desc 	= Src.Lvl7_Desc
+		,updt_tmst 	= Src.updt_tmst
+		,updt_usr_id = Src.updt_usr_id
+WHEN NOT MATCHED THEN 
+          INSERT
+               (
+				 btlr_branch_no
+				,ownrshp_id
+				,setl_dt
+				,Lvl1_ID
+				,Lvl1_Desc
+				,Lvl2_ID
+				,Lvl2_Desc
+				,Lvl3_ID
+				,Lvl3_Desc
+				,Lvl4_ID
+				,Lvl4_Desc
+				,Lvl5_ID
+				,Lvl5_Desc
+				,Lvl6_ID
+				,Lvl6_Desc
+				,Lvl7_ID
+				,Lvl7_Desc
+				,cret_tmst
+				,cret_usr_id
+				,updt_tmst
+				,updt_usr_id
+               ) 
+            VALUES
+               (
+				Src.btlr_branch_no
+				,Src.ownrshp_id
+				,Src.Setl_Dt
+				,Src.Lvl1_ID
+				,Src.Lvl1_Desc
+				,Src.Lvl2_ID
+				,Src.Lvl2_Desc
+				,Src.Lvl3_ID
+				,Src.Lvl3_Desc
+				,Src.Lvl4_ID
+				,Src.Lvl4_Desc
+				,Src.Lvl5_ID
+				,Src.Lvl5_Desc
+				,Src.Lvl6_ID
+				,Src.Lvl6_Desc
+				,Src.Lvl7_ID
+				,Src.Lvl7_Desc
+				,Src.cret_tmst
+				,Src.cret_usr_id
+				,Src.updt_tmst
+				,Src.updt_usr_id
+               ) 
+;
+.if errorcode <> 0 then .goto FAILURE
+
+Collect stats on &dbcbstables.DATA_QUAL_MISS_DAY
+Index (ownrshp_id,btlr_branch_no,setl_dt)
+;
+.if errorcode <> 0 then .goto FAILURE
+
+Create Multiset Volatile table Btlr_Actual_Vol
+		, no fallback
+		, no log
+	(
+           ownrshp_id   INTEGER
+          ,Btlr_Branch_No CHAR(10)
+          ,Setl_Dt DATE
+          ,Act_Qty Float
+	)
+primary index (ownrshp_id, Btlr_Branch_No, Setl_Dt) 
+on commit preserve rows
+;
+.if errorcode <> 0 then .goto FAILURE
+
+Insert into Btlr_Actual_Vol
+(
+	ownrshp_id
+	,Btlr_Branch_No
+	,Setl_Dt
+	,Act_Qty
+)
+Select ownrshp_id
+	,btlr_settlement_branch
+	,settlement_dt
+	,Coalesce(Sum(qty),0) as Act_Qty
+from &dbcorplinesviews.invoice_balance Inv
+Where ownrshp_id not in (10,180,790)
+and ownrshp_id <= 879
+and Coalesce(qty,0) <> 0
+Group by 1,2,3
+;
+.if errorcode <> 0 then .goto FAILURE
+
+Delete
+From &dbcbstemp.DATA_QUAL_SMRY_DSBD_Temp
+;
+.if errorcode <> 0 then .goto FAILURE
+
+
+Insert into &dbcbstemp.DATA_QUAL_SMRY_DSBD_Temp
+( 
+	 ownrshp_id
+	,btlr_branch_no
+	,setl_dt
+	,Vldt_Btlr_Cnt
+	,Miss_Day_Btlr_Cnt
+	,Est_Vol
+	,Actl_Vol
+	,Est_Day_Btlr_Cnt
+	,Susp_Vol_Btlr_Cnt
+	,Susp_Vol
+	,cret_tmst
+	,cret_usr_id
+	,updt_tmst
+	,updt_usr_id
+)
+Select 	 ownrshp_id
+	,btlr_branch_no
+	,setl_dt
+	,Vldt_Btlr_Cnt
+	,Miss_Day_Btlr_Cnt
+	,Est_Vol
+	,Actl_Vol
+	,Est_Day_Btlr_Cnt
+	,Susp_Vol_Btlr_Cnt
+	,Susp_Vol
+	,CURRENT_TIMESTAMP(0)  cret_tmst
+	,USER cret_usr_id
+	,CURRENT_TIMESTAMP(0)  updt_tmst
+	,USER updt_usr_id
+From 
+	(	Select  Hier.OwnershipID as ownrshp_id
+			,Hier.Branch_Number as btlr_branch_no
+			,Hier.setl_dt
+			,Case when (No_Miss_Day_Ind = 'Y' and No_Susp_Vol_Ind = 'Y' 
+					and No_Est_Vol_Ind = 'Y' ) then 
+				Cast('1' as integer)
+			 Else Cast('0' as integer)
+			 End as Vldt_Btlr_Cnt
+			,Sum(case when  MissD.ownrshp_id is not null then 1 
+					else 0 end)  as Miss_Day_Btlr_Cnt
+			,Sum(case when  Est.ownrshp_id is not null then Est_vol 
+					else 0 end) as Est_Vol 
+			,Sum(case when  ActV.ownrshp_id is not null then Act_Qty 
+					else 0 end) as Actl_Vol
+			,Sum(case when  Est.ownrshp_id is not null then 1 
+					else 0 end) as Est_Day_Btlr_Cnt
+			,Sum(case when  Susp.ownrshp_id is not null then 1 
+					else 0 end) as Susp_Vol_Btlr_Cnt
+			,Sum(case when  Susp.ownrshp_id is not null then Susp_Vol 
+					else 0 end) as Susp_Vol
+			,Sum(Case when VolVa.ownrshp_id is not null or 
+						MissD.ownrshp_id is not null or 
+						Est.ownrshp_id is not null or 
+						Susp.ownrshp_id is not null or 
+						ActV.ownrshp_id is not null then
+				Cast('1' as integer)
+			else Cast('0' as integer)
+			End) as Record_Cnt	
+		From (Select OwnershipID
+					 ,Branch_Number
+					 ,Cal_Dt as Setl_dt
+					 ,CUR_YR_AC_YMW as Wk_No
+			From &dbcbsmeviews.DATA_QUAL_FSMG_HIER FSMG
+			Cross Join &dbcontrol.acdates_mstr Dt
+			Where FSMG.OwnershipID not in (10,180,790)
+			and FSMG.OwnershipID <= 879
+			and  Dt.cal_typ_cd='M445' 
+			and Dt.Cal_Dt >= current_date - 365
+			Group by 1,2,3,4
+			) Hier
+		Inner Join Btlr_Batch_Active_Status Branch  
+		On Branch.ownrshp_id = Hier.OwnershipID  
+		and Branch.Btlr_Branch_No = Hier.Branch_Number
+		and Branch.Setl_Dt = Hier.SETL_DT
+		Left Outer Join &dbcbstables.DATA_QUAL_VOL_VALD_TRK VolVa
+		On Hier.OwnershipID = VolVa.ownrshp_id
+		and Hier.Wk_No = VolVa.Wk_No
+		Left Outer Join &dbcbstables.DATA_QUAL_MISS_DAY MissD
+		On  Hier.OwnershipID = MissD.ownrshp_id
+		and Hier.Branch_Number = MissD.btlr_branch_no
+		and Hier.Setl_dt = Cast(MissD.setl_dt as date) 
+		Left Outer Join (Select ownrshp_id
+								,btlr_branch_no
+								,Cast(setl_dt as date)  as setl_dt
+								,sum(Est_Vol) as Est_Vol
+							From &dbcbstables.DATA_QUAL_EST_VOL Est
+							Group by 1,2,3
+						) Est
+		On  Hier.OwnershipID = Est.ownrshp_id
+		and Hier.Branch_Number = Est.btlr_branch_no
+		and Hier.Setl_dt = Est.setl_dt
+		Left Outer Join (Select ownrshp_id
+								,btlr_branch_no
+								,Cast(setl_dt as date) as setl_dt
+								,sum(Susp_Vol) as Susp_Vol
+						  From &dbcbstables.DATA_QUAL_SUSP_VOL 
+						  Group by 1,2,3
+						 )Susp
+		On  Hier.OwnershipID = Susp.ownrshp_id
+		and Hier.Branch_Number = Susp.btlr_branch_no
+		and Hier.Setl_dt = Susp.setl_dt 
+		Left outer join ( Select ownrshp_id
+								,btlr_branch_no
+								,Setl_dt
+								,Sum(Act_Qty) as Act_Qty
+							From Btlr_Actual_Vol
+							Group by 1,2,3
+						 ) ActV
+		On  Hier.OwnershipID = ActV.ownrshp_id
+		and Hier.Branch_Number = ActV.btlr_branch_no
+		and Hier.Setl_dt = ActV.Setl_dt
+		Group by 1,2,3,4
+	) D0
+where Record_Cnt > 0  
+;
+.if errorcode <> 0 then .goto FAILURE
+
+Collect stats on &dbcbstemp.DATA_QUAL_SMRY_DSBD_Temp
+Index (ownrshp_id ,btlr_branch_no ,setl_dt)
+;
+.if errorcode <> 0 then .goto FAILURE
+
+/* Delete those records that are 
+existing in the target table but not present in the source.
+*/
+
+Delete
+From  &dbcbstables.DATA_QUAL_SMRY_DSBD
+Where (ownrshp_id,btlr_branch_no,Setl_Dt) 
+	   not in
+	   (Select ownrshp_id,btlr_branch_no,Setl_Dt
+		from &dbcbstemp.DATA_QUAL_SMRY_DSBD_Temp Src
+		)
+;
+.if errorcode <> 0 then .goto FAILURE
+
+MERGE INTO &dbcbstables.DATA_QUAL_SMRY_DSBD Tgt
+USING  &dbcbstemp.DATA_QUAL_SMRY_DSBD_Temp Src
+ON (
+	  Src.ownrshp_id = Tgt.ownrshp_id
+	  and Src.btlr_branch_no = Tgt.btlr_branch_no
+	  and Src.Setl_Dt = Tgt.Setl_Dt
+    )
+WHEN MATCHED THEN 
+UPDATE SET Vldt_Btlr_Cnt 	= Src.Vldt_Btlr_Cnt
+		,Miss_Day_Btlr_Cnt 	= Src.Miss_Day_Btlr_Cnt
+		,Est_Vol 			= Src.Est_Vol
+		,Actl_Vol 			= Src.Actl_Vol
+		,Est_Day_Btlr_Cnt 	= Src.Est_Day_Btlr_Cnt
+		,Susp_Vol_Btlr_Cnt 	= Src.Susp_Vol_Btlr_Cnt
+		,Susp_Vol 			= Src.Susp_Vol
+		,updt_tmst 			= Src.updt_tmst
+		,updt_usr_id 		= Src.updt_usr_id
+WHEN NOT MATCHED THEN
+          INSERT
+               (
+			 ownrshp_id
+			,btlr_branch_no
+			,setl_dt
+			,Vldt_Btlr_Cnt
+			,Miss_Day_Btlr_Cnt
+			,Est_Vol
+			,Actl_Vol
+			,Est_Day_Btlr_Cnt
+			,Susp_Vol_Btlr_Cnt
+			,Susp_Vol
+			,cret_tmst
+			,cret_usr_id
+			,updt_tmst
+			,updt_usr_id
+			)
+            VALUES
+               (
+			 Src.ownrshp_id
+			,Src.btlr_branch_no
+			,Src.Setl_Dt
+			,Src.Vldt_Btlr_Cnt
+			,Src.Miss_Day_Btlr_Cnt
+			,Src.Est_Vol
+			,Src.Actl_Vol
+			,Src.Est_Day_Btlr_Cnt
+			,Src.Susp_Vol_Btlr_Cnt
+			,Src.Susp_Vol
+			,Src.cret_tmst
+			,Src.cret_usr_id
+			,Src.updt_tmst
+			,Src.updt_usr_id
+               ) 
+;
+.if errorcode <> 0 then .goto FAILURE
+
+
+Collect stats on &dbcbstables.DATA_QUAL_SMRY_DSBD
+Index (ownrshp_id ,btlr_branch_no ,setl_dt)
+;
+.if errorcode <> 0 then .goto FAILURE
+
+
+/* update &dbcbstables.DATA_QUAL_SMRY_DSBD
+set Vldt_Btlr_Cnt = 0
+where Miss_Day_Btlr_Cnt = 0
+and Est_Day_Btlr_Cnt = 0 
+and Susp_Vol_Btlr_Cnt = 0
+;
+
+*/
+
+
+Create Multiset Volatile table DQD_Refresh_Tmst as
+	(
+Select CURRENT_TIMESTAMP(0) as Tmst_val
+	)
+with data 
+on commit preserve rows
+;
+.if errorcode <> 0 then .goto FAILURE
+
+Update &dbcbstables.DATA_QUAL_SUSP_VOL
+Set Refresh_Dt = DQD_Refresh_Tmst.Tmst_val
+;
+.if errorcode <> 0 then .goto FAILURE
+
+Update &dbcbstables.DATA_QUAL_EST_VOL
+Set Refresh_Dt = DQD_Refresh_Tmst.Tmst_val
+;
+.if errorcode <> 0 then .goto FAILURE
+
+
+Update &dbcbstables.DATA_QUAL_MISS_DAY
+Set Refresh_Dt = DQD_Refresh_Tmst.Tmst_val
+;
+.if errorcode <> 0 then .goto FAILURE
+
+
+Update &dbcbstables.DATA_QUAL_SMRY_DSBD
+Set Refresh_Dt = DQD_Refresh_Tmst.Tmst_val
+;
+.if errorcode <> 0 then .goto FAILURE
+
+
+.QUIT 0
+
+.LABEL FAILURE
+.REMARK '*** BTEQ error, abending script. ***'
+.QUIT 99
+
+
